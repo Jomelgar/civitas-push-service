@@ -11,6 +11,10 @@ export async function requireSameOrigin(c: Context, next: Next): Promise<Respons
   }
 
   const origin = c.req.header('origin');
+  if (origin === 'null') {
+    if (site === 'same-origin') return next();
+    return c.json({ ok: false, error: 'forbidden_origin' }, 403);
+  }
   if (origin) {
     let originHost: string;
     try {

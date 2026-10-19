@@ -23,7 +23,7 @@ export async function securityHeaders(c: Context, next: Next): Promise<void> {
   const headers = c.res.headers;
   headers.set('X-Content-Type-Options', 'nosniff');
   headers.set('X-Frame-Options', 'DENY');
-  headers.set('Referrer-Policy', 'no-referrer');
+  headers.set('Referrer-Policy', 'same-origin');
   headers.set('Cross-Origin-Opener-Policy', 'same-origin');
   headers.set('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
   headers.set('Content-Security-Policy', CONTENT_SECURITY_POLICY);
