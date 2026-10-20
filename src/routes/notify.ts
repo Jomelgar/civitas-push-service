@@ -1,157 +1,65 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
+import { queue } from '../queue/runtime';
+import { publicJob, QueueError } from '../queue/store';
+import { notifySchema } from '../services/notifications';
+import { runNotify } from '../services/dispatch';
 
-import { upsertDevice } from '../db/repository';
-import { sendPush } from '../services/expo-push';
+export const jobSchema = z.object({
+  id: z.string(), deviceId: z.string(), status: z.enum(['queued', 'sending', 'awaiting_receipt', 'accepted', 'dead']),
+  attempts: z.number(), error: z.string().nullable(), createdAt: z.string(), updatedAt: z.string(),
+  batchId: z.string().nullable(), deliveryMode: z.enum(['queued', 'immediate']),
+  priority: z.enum(['default', 'normal', 'high']),
+});
+const successSchema = z.object({ ok: z.literal(true), job: jobSchema });
+export const errorSchema = z.object({ ok: z.literal(false), error: z.string() });
+export const jsonContent = <T extends z.ZodTypeAny>(schema: T) => ({ content: { 'application/json': { schema } } });
 
-const notifyDataSchema = z
-  .object({
-    type: z.string().max(64).optional().openapi({ example: 'visit_registered' }),
-    screen: z.string().max(64).optional().openapi({ example: 'AccessPass' }),
-    visitId: z.string().max(128).optional().openapi({ example: 'VIS-0001' }),
-    propertyId: z.number().int().optional().openapi({ example: 456 }),
-    residenceId: z.number().int().optional().openapi({ example: 2 }),
-  })
-  .passthrough()
-  .openapi('NotifyData');
-
-export const notifySchema = z
-  .object({
-    deviceId: z.string().min(1).max(128).openapi({ example: 'device-123' }),
-    token: z
-      .string()
-      .min(1)
-      .max(512)
-      .openapi({ example: 'ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]' }),
-    message: z.string().min(1).max(4000).openapi({ example: 'Tienes una visita en la puerta.' }),
-    title: z.string().min(1).max(256).optional().openapi({ example: 'Civitas Access' }),
-    url: z
-      .string()
-      .max(2048)
-      .optional()
-      .openapi({ example: 'app://visit/123', description: 'Deep link opcional. Si se omite, la app abre la pantalla de inicio (Home).' }),
-    data: notifyDataSchema.optional().openapi({
-      description: 'Datos para el enrutamiento interno de la app. Si falta `screen`, se asume "Home".',
-    }),
-    priority: z
-      .enum(['default', 'normal', 'high'])
-      .optional()
-      .openapi({ example: 'high' }),
-    channelId: z.string().max(64).optional().openapi({ example: 'panic' }),
-  })
-  .openapi('NotifyRequest');
-
-export type NotifyInput = z.infer<typeof notifySchema>;
-
-export type NotifyOutcome =
-  | { ok: true; sent: number }
-  | { ok: false; error: string; sent: number };
-
-export async function runNotify(input: NotifyInput): Promise<NotifyOutcome> {
-  const { deviceId, token, message, title, url, data, priority, channelId } = input;
-
-  upsertDevice({ id: deviceId, token });
-
-  const pushData: Record<string, unknown> = { ...(data ?? {}) };
-  if (!pushData.screen) pushData.screen = 'Home';
-  if (url) pushData.url = url;
-
-  const result = await sendPush([{ deviceId, token }], {
-    title: title ?? 'Notificación',
-    body: message,
-    data: pushData,
-    priority,
-    channelId,
-  });
-
-  if (result.error) return { ok: false, error: result.error, sent: result.sent };
-  if (result.invalidTokens.length > 0) {
-    return { ok: false, error: 'invalid_expo_token', sent: result.sent };
-  }
-  if (result.sent === 0) return { ok: false, error: 'push_failed', sent: 0 };
-
-  return { ok: true, sent: result.sent };
-}
-
-const notifySuccessSchema = z
-  .object({
-    ok: z.literal(true),
-    sent: z.number(),
-  })
-  .openapi('NotifySuccess');
-
-const notifyErrorSchema = z
-  .object({
-    ok: z.literal(false),
-    error: z.string(),
-    sent: z.number(),
-    details: z
-      .object({
-        formErrors: z.array(z.string()),
-        fieldErrors: z.record(z.array(z.string())),
-      })
-      .optional(),
-  })
-  .openapi('NotifyError');
-
-const jsonContent = <T extends z.ZodTypeAny>(schema: T) => ({
-  content: { 'application/json': { schema } },
+export const notifyRoutes = new OpenAPIHono<{ Variables: { apiKey: { id: string } } }>({
+  defaultHook: (result, c) => {
+    if (!result.success) return c.json({ ok: false, error: 'invalid_body', details: result.error.flatten() }, 400);
+  },
 });
 
-const notifyRoute = createRoute({
-  method: 'post',
-  path: '/',
-  tags: ['Notify'],
-  summary: 'Enviar notificación push',
-  description:
-    'Registra el dispositivo y envía una notificación push a través de Expo. Requiere API key (`Authorization: Bearer <key>` o `X-API-Key`).',
+notifyRoutes.openapi(createRoute({
+  method: 'post', path: '/', tags: ['Notify'], summary: 'Enviar una notificación individual o encolarla si no hay capacidad',
   security: [{ ApiKeyAuth: [] }],
   request: {
-    body: {
-      ...jsonContent(notifySchema),
-      required: true,
-    },
+    headers: z.object({ 'idempotency-key': z.string().min(1).max(128).optional() }),
+    body: { ...jsonContent(notifySchema), required: true },
   },
   responses: {
-    200: {
-      ...jsonContent(notifySuccessSchema),
-      description: 'Notificación enviada',
-    },
-    400: {
-      ...jsonContent(notifyErrorSchema),
-      description: 'Cuerpo inválido o token de Expo inválido',
-    },
-    401: {
-      ...jsonContent(notifyErrorSchema),
-      description: 'API key ausente, inválida o deshabilitada',
-    },
-    502: {
-      ...jsonContent(notifyErrorSchema),
-      description: 'Fallo al enviar la notificación',
-    },
+    200: { ...jsonContent(z.object({ ok: z.literal(true), sent: z.literal(1), ticketId: z.string(), job: jobSchema })), description: 'Expo aceptó el mensaje durante esta petición' },
+    202: { ...jsonContent(z.object({ ok: z.literal(true), sent: z.literal(0), job: jobSchema })), description: 'Sin capacidad inmediata; notificación persistida en la cola' },
+    502: { ...jsonContent(errorSchema), description: 'Expo rechazó el envío o su resultado es incierto' },
+    400: { ...jsonContent(errorSchema), description: 'Solicitud inválida' },
+    409: { ...jsonContent(errorSchema), description: 'Clave de idempotencia reutilizada con otro contenido' },
+    503: { ...jsonContent(errorSchema), description: 'Cola llena' },
   },
-});
-
-export const notifyRoutes = new OpenAPIHono({
-  defaultHook: (result, c) => {
-    if (!result.success) {
-      return c.json(
-        { ok: false, error: 'invalid_body', sent: 0, details: result.error.flatten() },
-        400,
-      );
+}), async (c) => {
+  try {
+    const result = await runNotify(c.req.valid('json'), (c.get('apiKey') as { id: string }).id, c.req.header('idempotency-key'));
+    c.header('Location', '/v1/notify/' + result.job.id);
+    if (result.sent === 0) return c.json(result, 202);
+    return c.json(result, 200);
+  } catch (error) {
+    if (error instanceof QueueError) {
+      if (error.status === 503) c.header('Retry-After', String(Math.max(1, Math.ceil((error.retryAfterMs || 60_000) / 1000))));
+      return c.json({ ok: false as const, error: error.code }, error.status);
     }
-  },
+    throw error;
+  }
 });
 
-notifyRoutes.openapi(notifyRoute, async (c) => {
-  const outcome = await runNotify(c.req.valid('json'));
-
-  if (outcome.ok) {
-    return c.json({ ok: true as const, sent: outcome.sent }, 200);
-  }
-
-  if (outcome.error === 'invalid_expo_token') {
-    return c.json({ ok: false as const, error: outcome.error, sent: outcome.sent }, 400);
-  }
-
-  return c.json({ ok: false as const, error: outcome.error, sent: outcome.sent }, 502);
+notifyRoutes.openapi(createRoute({
+  method: 'get', path: '/{id}', tags: ['Notify'], summary: 'Consultar estado de notificación',
+  security: [{ ApiKeyAuth: [] }], request: { params: z.object({ id: z.string().uuid() }) },
+  responses: {
+    200: { ...jsonContent(successSchema), description: 'Estado actual' },
+    404: { ...jsonContent(errorSchema), description: 'No encontrada' },
+  },
+}), (c) => {
+  const job = queue.get(c.req.valid('param').id);
+  if (!job || job.owner !== (c.get('apiKey') as { id: string }).id) return c.json({ ok: false as const, error: 'not_found' }, 404);
+  c.header('Cache-Control', 'no-store');
+  return c.json({ ok: true as const, job: publicJob(job) }, 200);
 });

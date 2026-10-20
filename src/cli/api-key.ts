@@ -1,5 +1,5 @@
 import { createApiKey, deleteApiKey, getApiKey, listApiKeys } from '../db/api-keys';
-import { generateApiKey } from '../services/api-keys';
+import { generateApiKey, validIpEntry } from '../services/api-keys';
 
 function parseFlags(args: string[]): Record<string, string> {
   const flags: Record<string, string> = {};
@@ -38,6 +38,11 @@ function commandCreate(args: string[]): void {
     .join(',');
 
   const { key, prefix, keyHash } = generateApiKey();
+  if (allowedIps && !allowedIps.split(',').every(validIpEntry)) {
+    console.error('IPs o CIDR inválidos.');
+    process.exitCode = 1;
+    return;
+  }
   const row = createApiKey({ name, prefix, keyHash, allowedIps });
 
   console.log('API key creada. Guárdala ahora: no se volverá a mostrar.\n');

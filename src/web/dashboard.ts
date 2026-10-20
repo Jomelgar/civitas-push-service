@@ -1,4 +1,5 @@
 import { apiKeysPanel, apiKeysScript } from './api-keys';
+import { batchesPanel, batchesScript } from './batches';
 import {
   appShell,
   baseCss,
@@ -74,7 +75,7 @@ function notifyPanel(): string {
                 </label>
               </fieldset>
 
-              <button type="submit">Enviar notificación</button>
+              <button type="submit">Enviar ahora</button>
               <div id="result" class="toast"></div>
             </form>
           </div>
@@ -106,6 +107,48 @@ function dashboardScript(): string {
       var searchEl = document.getElementById('device-search');
       var refreshEl = document.getElementById('devices-refresh');
       var allDevices = [];
+      var requestKey = null;
+      var requestBody = null;
+      var submitButton = form.querySelector('button[type="submit"]');
+
+      function loadJobs() {
+        fetch('/api/jobs').then(function (res) {
+          if (res.status === 401) { window.location.href = '/login'; return null; }
+          if (!res.ok) throw new Error('queue_unavailable');
+          return res.json();
+        }).then(function (data) {
+          if (!data) return;
+          document.getElementById('queue-health').textContent = data.workerHealthy ? 'Procesador activo' : 'Procesador sin actividad reciente';
+          var container = document.getElementById('queue-jobs');
+          container.textContent = '';
+          var labels = { queued: 'En cola', sending: 'Enviando', awaiting_receipt: 'Esperando recibo', accepted: 'Aceptada por proveedor', dead: 'Fallida' };
+          data.jobs.forEach(function (job) {
+            var row = el('div', 'device');
+            row.appendChild(el('div', 'device-id', job.deviceId + ' · ' + labels[job.status]));
+            row.appendChild(el('div', 'muted small', job.id + ' · Prioridad: ' + job.priority + ' · Intentos: ' + job.attempts + (job.error ? ' · ' + job.error : '')));
+            if (job.status === 'dead' && job.deliveryMode !== 'immediate') {
+              var retry = el('button', 'ghost', 'Reintentar');
+              retry.type = 'button';
+              retry.addEventListener('click', function () {
+                if (!confirm('Reintentar esta solicitud puede duplicar un aviso si el resultado anterior fue incierto. ¿Continuar?')) return;
+                retry.disabled = true;
+                fetch('/api/jobs/' + job.id + '/retry', { method: 'POST' })
+                  .then(function (res) { return res.json(); })
+                  .then(function (result) {
+                    if (!result.ok) show('err', result.error);
+                    loadJobs();
+                  }).catch(function () { show('err', 'No se pudo reintentar'); })
+                  .finally(function () { retry.disabled = false; });
+              });
+              row.appendChild(retry);
+            }
+            container.appendChild(row);
+          });
+          if (!data.jobs.length) container.appendChild(el('p', 'muted small', 'Sin solicitudes.'));
+        }).catch(function () {
+          document.getElementById('queue-health').textContent = 'No se pudo consultar la cola';
+        });
+      }
 
       function show(kind, text) {
         result.className = 'toast show ' + kind;
@@ -198,18 +241,28 @@ function dashboardScript(): string {
         if (priority) payload.priority = priority;
         if (channelId) payload.channelId = channelId;
 
-        show('ok', 'Enviando...');
+        var serialized = JSON.stringify(payload);
+        if (requestBody !== serialized || !requestKey) {
+          requestBody = serialized;
+          requestKey = crypto.randomUUID();
+        }
+        submitButton.disabled = true;
+        show('ok', 'Enviando a Expo...');
         fetch('/api/notify', {
           method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(payload)
+          headers: { 'content-type': 'application/json', 'idempotency-key': requestKey },
+          body: serialized
         })
           .then(function (res) {
             return res.json().then(function (data) { return { ok: res.ok, data: data }; });
           })
           .then(function (out) {
             if (out.ok && out.data.ok) {
-              show('ok', 'Enviado a ' + out.data.sent + ' dispositivo(s).');
+              show('ok', out.data.sent === 0
+                ? 'Sin capacidad inmediata. Notificación en cola: ' + out.data.job.id
+                : 'Expo aceptó la notificación. Ticket: ' + out.data.ticketId);
+              requestKey = null;
+              loadJobs();
               loadDevices();
             } else {
               show('err', 'Error: ' + (out.data.error || 'desconocido'));
@@ -217,10 +270,12 @@ function dashboardScript(): string {
           })
           .catch(function () {
             show('err', 'No se pudo contactar al servidor.');
-          });
+          }).finally(function () { submitButton.disabled = false; });
       });
 
       loadDevices();
+      loadJobs();
+      setInterval(function () { if (!document.hidden) loadJobs(); }, 5000);
     })();
   </script>`;
 }
@@ -242,9 +297,10 @@ export function dashboardPage(user: string): string {
 <body>
   ${appShell({
     user,
-    content: [notifyPanel(), devicesPanel(), apiKeysPanel()].join('\n'),
+    content: [notifyPanel(), batchesPanel(), devicesPanel(), apiKeysPanel()].join('\n'),
   })}
   ${dashboardScript()}
+  ${batchesScript()}
   ${apiKeysScript()}
   ${shellScript()}
   ${themeToggleScript()}

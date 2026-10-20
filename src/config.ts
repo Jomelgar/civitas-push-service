@@ -80,8 +80,14 @@ if (generatedSecrets.length > 0) {
   );
 }
 
+function positiveInteger(name: string, fallback: number, max = Number.MAX_SAFE_INTEGER): number {
+  const value = Number(process.env[name] ?? fallback);
+  if (!Number.isSafeInteger(value) || value < 1 || value > max) throw new Error(`Invalid configuration: ${name}`);
+  return value;
+}
+
 export const config = {
-  port: Number(process.env.PORT ?? 8790),
+  port: positiveInteger('PORT', 8790, 65535),
   databasePath,
   expoAccessToken: process.env.EXPO_ACCESS_TOKEN || undefined,
   adminUser: process.env.ADMIN_USER ?? 'admin',
@@ -91,8 +97,10 @@ export const config = {
   corsOrigin: process.env.CORS_ORIGIN?.trim() ?? '',
   trustProxy: /^(1|true|yes)$/i.test(process.env.TRUST_PROXY ?? ''),
   isProduction: process.env.NODE_ENV === 'production',
-  loginRateLimitMax: Number(process.env.LOGIN_RATE_LIMIT_MAX ?? 10),
-  apiRateLimitMax: Number(process.env.API_RATE_LIMIT_MAX ?? 120),
+  queueCapacity: positiveInteger('QUEUE_CAPACITY', 100_000),
+  pushRate: positiveInteger('PUSH_RATE_PER_SECOND', 400, 500),
+  pushMaxAttempts: positiveInteger('PUSH_MAX_ATTEMPTS', 8, 20),
+  pushJobTtlSeconds: positiveInteger('PUSH_JOB_TTL_SECONDS', 86400, 604800),
 };
 
 const WEAK_PASSWORDS = new Set([

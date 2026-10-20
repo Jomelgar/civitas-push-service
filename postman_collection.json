@@ -25,6 +25,16 @@
       "key": "apiKey",
       "value": "cva_tu_api_key_aqui",
       "type": "string"
+    },
+    {
+      "key": "jobId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "batchId",
+      "value": "",
+      "type": "string"
     }
   ],
   "auth": {
@@ -58,8 +68,12 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/health",
-              "host": ["{{baseUrl}}"],
-              "path": ["health"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
             },
             "description": "Comprueba que el servidor está en marcha."
           },
@@ -89,8 +103,13 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/v1/devices",
-              "host": ["{{baseUrl}}"],
-              "path": ["v1", "devices"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "devices"
+              ]
             },
             "description": "Devuelve todos los dispositivos registrados ordenados por última conexión."
           },
@@ -129,8 +148,13 @@
             },
             "url": {
               "raw": "{{baseUrl}}/v1/devices",
-              "host": ["{{baseUrl}}"],
-              "path": ["v1", "devices"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "devices"
+              ]
             },
             "description": "Registra o actualiza un dispositivo (upsert)."
           },
@@ -169,8 +193,14 @@
             },
             "url": {
               "raw": "{{baseUrl}}/v1/devices/sync",
-              "host": ["{{baseUrl}}"],
-              "path": ["v1", "devices", "sync"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "devices",
+                "sync"
+              ]
             },
             "description": "Sincroniza un dispositivo. Acepta opcionalmente un array 'items'."
           },
@@ -195,8 +225,14 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/v1/devices/{{deviceId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["v1", "devices", "{{deviceId}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "devices",
+                "{{deviceId}}"
+              ],
               "variable": [
                 {
                   "key": "deviceId",
@@ -221,7 +257,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('respuesta esperada', () => pm.expect([200, 400, 502]).to.include(pm.response.code));"
+                  "pm.test('Enviada o encolada', () => pm.expect([200, 202]).to.include(pm.response.code));",
+                  "pm.collectionVariables.set('jobId', pm.response.json().job.id);"
                 ]
               }
             }
@@ -232,6 +269,11 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "type": "text"
               }
             ],
             "body": {
@@ -245,10 +287,15 @@
             },
             "url": {
               "raw": "{{baseUrl}}/v1/notify",
-              "host": ["{{baseUrl}}"],
-              "path": ["v1", "notify"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "notify"
+              ]
             },
-            "description": "Registra el dispositivo y envía una notificación push a través de Expo.\n\n`data.screen` indica la pantalla a abrir en la app (si se omite, se asume \"Home\"). `url` es un deep link opcional.\n\n- 200: enviada\n- 400: cuerpo inválido o token de Expo inválido\n- 502: fallo al enviar"
+            "description": "Intenta enviar inmediatamente. Devuelve 200 al aceptar Expo o 202 con job.id si falta capacidad y se encola. Consultar GET /v1/notify/{id}."
           },
           "response": []
         },
@@ -260,6 +307,11 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "type": "text"
               }
             ],
             "body": {
@@ -273,12 +325,29 @@
             },
             "url": {
               "raw": "{{baseUrl}}/v1/notify",
-              "host": ["{{baseUrl}}"],
-              "path": ["v1", "notify"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "notify"
+              ]
             },
-            "description": "Notificación al propietario de una propiedad cuando se registra una visita."
+            "description": "Intenta enviar inmediatamente. Devuelve 200 al aceptar Expo o 202 con job.id si falta capacidad y se encola. Consultar GET /v1/notify/{id}."
           },
-          "response": []
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Enviada o encolada', () => pm.expect([200, 202]).to.include(pm.response.code));",
+                  "pm.collectionVariables.set('jobId', pm.response.json().job.id);"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Pánico (ejemplo)",
@@ -288,6 +357,11 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "type": "text"
               }
             ],
             "body": {
@@ -301,12 +375,29 @@
             },
             "url": {
               "raw": "{{baseUrl}}/v1/notify",
-              "host": ["{{baseUrl}}"],
-              "path": ["v1", "notify"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "notify"
+              ]
             },
-            "description": "Alerta de pánico a los guardias del residencial."
+            "description": "Intenta enviar inmediatamente. Devuelve 200 al aceptar Expo o 202 con job.id si falta capacidad y se encola. Consultar GET /v1/notify/{id}."
           },
-          "response": []
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Enviada o encolada', () => pm.expect([200, 202]).to.include(pm.response.code));",
+                  "pm.collectionVariables.set('jobId', pm.response.json().job.id);"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -320,12 +411,99 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/doc",
-              "host": ["{{baseUrl}}"],
-              "path": ["doc"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "doc"
+              ]
             },
             "description": "Especificación OpenAPI 3.0.0 generada por el servidor. Puede importarse en Postman o usarse con Swagger UI en /ui."
           },
           "response": []
+        }
+      ]
+    },
+    {
+      "name": "Estado de notificación",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/v1/notify/{{jobId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "v1",
+            "notify",
+            "{{jobId}}"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Lotes",
+      "item": [
+        {
+          "name": "Crear lote persistente",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/batches",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Aviso general\",\n  \"message\": \"Nuevo aviso de Civitas\",\n  \"data\": {\n    \"screen\": \"Home\"\n  },\n  \"devices\": [\n    {\n      \"deviceId\": \"{{deviceId}}\",\n      \"token\": \"{{expoToken}}\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('202 Accepted', () => pm.response.to.have.status(202));",
+                  "pm.collectionVariables.set('batchId', pm.response.json().batch.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Listar lotes",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/v1/batches?limit=50&offset=0"
+          }
+        },
+        {
+          "name": "Progreso del lote",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/v1/batches/{{batchId}}"
+          }
+        },
+        {
+          "name": "Resultados por dispositivo",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/v1/batches/{{batchId}}/jobs?limit=50&offset=0"
+          }
         }
       ]
     }

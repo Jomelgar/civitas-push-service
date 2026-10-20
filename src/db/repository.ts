@@ -23,7 +23,7 @@ export function upsertDevice(input: {
      VALUES (?, ?, ?, 1, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        expo_token = excluded.expo_token,
-       platform = excluded.platform,
+       platform = COALESCE(?, devices.platform),
        enabled = 1,
        updated_at = excluded.updated_at,
        last_seen_at = excluded.last_seen_at`,
@@ -34,6 +34,7 @@ export function upsertDevice(input: {
     timestamp,
     timestamp,
     timestamp,
+    input.platform ?? null,
   );
 }
 
