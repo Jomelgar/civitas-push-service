@@ -1,6 +1,8 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 
 import { deleteDevice, listDevices, upsertDevice } from '../db/repository';
+import { Expo } from 'expo-server-sdk';
+import { queue } from '../queue/runtime';
 
 const deviceSchema = z
   .object({
@@ -9,6 +11,7 @@ const deviceSchema = z
       .string()
       .min(1)
       .max(512)
+      .refine(value => Expo.isExpoPushToken(value), 'Invalid Expo push token')
       .openapi({ example: 'ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]' }),
     platform: z.string().min(1).max(32).optional().openapi({ example: 'android' }),
   })
@@ -176,12 +179,14 @@ devicesRoutes.openapi(listRoute, (c) => {
 devicesRoutes.openapi(upsertRoute, (c) => {
   const { deviceId, token, platform } = c.req.valid('json');
   upsertDevice({ id: deviceId, token, platform });
+  queue.registerToken(token);
   return c.json({ ok: true as const }, 200);
 });
 
 devicesRoutes.openapi(syncRoute, (c) => {
   const { deviceId, token, platform } = c.req.valid('json');
   upsertDevice({ id: deviceId, token, platform });
+  queue.registerToken(token);
   return c.json({ ok: true as const }, 200);
 });
 

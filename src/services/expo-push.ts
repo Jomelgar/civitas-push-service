@@ -1,68 +1,58 @@
-import { Expo, type ExpoPushMessage } from 'expo-server-sdk';
+import type { ExpoPushMessage, ExpoPushTicket, ExpoPushReceipt } from 'expo-server-sdk';
 
-import { config } from '../config';
-
-export const expo = new Expo(
-  config.expoAccessToken ? { accessToken: config.expoAccessToken } : {},
-);
-
-export interface PushPayload {
-  title: string;
-  body: string;
-  data?: Record<string, unknown>;
-  priority?: 'default' | 'normal' | 'high';
-  channelId?: string;
-}
-
-export interface PushRecipient {
-  deviceId: string;
-  token: string;
-}
-
-export interface PushResult {
-  sent: number;
-  invalidTokens: string[];
-  error?: string;
-}
-
-export async function sendPush(
-  recipients: PushRecipient[],
-  payload: PushPayload,
-): Promise<PushResult> {
-  const valid = recipients.filter((recipient) => Expo.isExpoPushToken(recipient.token));
-  const invalidTokens = recipients
-    .filter((recipient) => !Expo.isExpoPushToken(recipient.token))
-    .map((recipient) => recipient.token);
-
-  if (valid.length === 0) return { sent: 0, invalidTokens };
-
-  const messages: ExpoPushMessage[] = valid.map((recipient) => ({
-    to: recipient.token,
-    sound: 'default',
-    title: payload.title,
-    body: payload.body,
-    data: payload.data ?? {},
-    ...(payload.priority ? { priority: payload.priority } : {}),
-    ...(payload.channelId ? { channelId: payload.channelId } : {}),
-  }));
-
-  let sent = 0;
-  const chunks = expo.chunkPushNotifications(messages);
-  try {
-    for (const chunk of chunks) {
-      const tickets = await expo.sendPushNotificationsAsync(chunk);
-      sent += tickets.filter((ticket) => ticket.status === 'ok').length;
-    }
-  } catch (error) {
-    const code = (error as { code?: string }).code;
-    const message = error instanceof Error ? error.message : String(error);
-    console.error('[expo-push] fallo al enviar push:', code ?? message);
-    return {
-      sent,
-      invalidTokens,
-      error: code === 'AUTHENTICATION_ERROR' ? 'invalid_expo_access_token' : 'push_upstream_error',
-    };
+export class ExpoRequestError extends Error {
+  constructor(public code: string, public retryable: boolean, public retryAfterMs = 0) {
+    super(code);
   }
-
-  return { sent, invalidTokens };
 }
+
+async function request(path: string, body: unknown, accessToken?: string): Promise<unknown> {
+  let response: Response;
+  try {
+    response = await fetch(`https://exp.host/--/api/v2/push/${path}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(20_000),
+    });
+  } catch {
+    throw new ExpoRequestError('expo_network_error', true);
+  }
+  if (!response.ok) {
+    const retry = response.headers.get('retry-after');
+    const seconds = retry ? Number(retry) : 0;
+    const delay = Number.isFinite(seconds) ? seconds * 1000 : Math.max(0, Date.parse(retry!) - Date.now());
+    await response.body?.cancel();
+    throw new ExpoRequestError(`expo_http_${response.status}`, response.status === 429 || response.status >= 500, delay || 0);
+  }
+  const parsed = await response.json().catch(() => null) as { data?: unknown; errors?: unknown } | null;
+  if (!parsed || parsed.errors || !parsed.data) throw new ExpoRequestError('expo_invalid_response', true);
+  return parsed.data;
+}
+
+export interface PushTransport {
+  send(messages: ExpoPushMessage[]): Promise<ExpoPushTicket[]>;
+  receipts(ids: string[]): Promise<Record<string, ExpoPushReceipt>>;
+}
+
+export const createExpoTransport = (accessToken?: string): PushTransport => ({
+  async send(messages) {
+    const data = await request('send', messages, accessToken);
+    if (!Array.isArray(data) || data.length !== messages.length ||
+      data.some(ticket => !ticket || !['ok', 'error'].includes(ticket.status) ||
+        (ticket.status === 'ok' && typeof ticket.id !== 'string'))) {
+      throw new ExpoRequestError('expo_invalid_tickets', true);
+    }
+    return data as ExpoPushTicket[];
+  },
+  async receipts(ids) {
+    const data = await request('getReceipts', { ids }, accessToken);
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      throw new ExpoRequestError('expo_invalid_receipts', true);
+    }
+    return data as Record<string, ExpoPushReceipt>;
+  },
+});

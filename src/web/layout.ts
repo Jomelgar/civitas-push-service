@@ -363,6 +363,12 @@ export function appShell({ user, content }: ShellOptions): string {
         <span>Civitas Access<small>Panel de notificaciones</small></span>
       </a>
       <nav class="nav" role="tablist" aria-label="Secciones">
+        <button class="nav-item" type="button" role="tab" data-route="#/notify" aria-selected="false" aria-controls="panel-notify">
+          ${icon('external')}<span>Notificación individual</span>
+        </button>
+        <button class="nav-item" type="button" role="tab" data-route="#/batches" aria-selected="false" aria-controls="panel-batches">
+          ${icon('devices')}<span>Lotes</span>
+        </button>
         <button class="nav-item" type="button" role="tab" data-route="#/devices" aria-selected="false" aria-controls="panel-devices">
           ${icon('devices')}<span>Dispositivos</span><span class="badge" id="badge-devices" hidden>0</span>
         </button>
@@ -404,7 +410,8 @@ export function shellScript(): string {
   return `<script>
     (function () {
       var routes = {
-        '#/notify': { title: 'Notificación', subtitle: 'Envía una notificación push a un dispositivo.', panel: 'panel-notify', nav: null },
+        '#/notify': { title: 'Notificación', subtitle: 'Envía una notificación push inmediata a un dispositivo.', panel: 'panel-notify', nav: '#/notify' },
+        '#/batches': { title: 'Lotes', subtitle: 'Progreso del procesamiento y resultados por dispositivo.', panel: 'panel-batches', nav: '#/batches' },
         '#/devices': { title: 'Dispositivos', subtitle: 'Dispositivos registrados y su último contacto.', panel: 'panel-devices', nav: '#/devices' },
         '#/keys': { title: 'API Keys', subtitle: 'Claves de acceso para servicios externos.', panel: 'panel-keys', nav: '#/keys' }
       };

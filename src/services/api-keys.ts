@@ -1,4 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { isIP } from 'node:net';
 
 import { config } from '../config';
 
@@ -83,6 +84,7 @@ function ipv6ToBigInt(ip: string): bigint | null {
 }
 
 function cidrMatch(ip: string, entry: string): boolean {
+  if (!validIpEntry(entry)) return false;
   const [range, bitsRaw] = entry.split('/');
   const bits = bitsRaw === undefined ? undefined : Number(bitsRaw);
 
@@ -107,6 +109,16 @@ function cidrMatch(ip: string, entry: string): boolean {
   }
 
   return false;
+}
+
+export function validIpEntry(entry: string): boolean {
+  const parts = entry.split('/');
+  if (parts.length > 2) return false;
+  const version = isIP(parts[0] ?? '');
+  if (!version) return false;
+  if (parts.length === 1) return true;
+  const prefix = parts[1]!;
+  return /^\d+$/.test(prefix) && Number(prefix) <= (version === 4 ? 32 : 128);
 }
 
 export function matchIpAllowlist(ip: string | undefined, allowlist: string): boolean {

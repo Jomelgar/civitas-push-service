@@ -14,15 +14,31 @@ import {
 } from '../db/api-keys';
 import { listDevices } from '../db/repository';
 import { noStore } from '../middleware/no-store';
-import { rateLimit } from '../middleware/rate-limit';
 import { requireSameOrigin } from '../middleware/same-origin';
 import { SESSION_COOKIE, SESSION_MAX_AGE, createSessionValue, hasValidSession, requireWebAuth } from '../middleware/session';
-import { generateApiKey } from '../services/api-keys';
-import { notifySchema, runNotify } from '../routes/notify';
+import { generateApiKey, validIpEntry } from '../services/api-keys';
+import { z } from 'zod';
+import { notifySchema } from '../services/notifications';
+import { runNotify } from '../services/dispatch';
+import { pageSchema } from '../services/batches';
 import { dashboardPage } from '../web/dashboard';
 import { loginPage } from '../web/login';
+import { queue } from '../queue/runtime';
+import { publicJob, QueueError } from '../queue/store';
 
 export const webRoutes = new Hono();
+
+const allowedIpsSchema = z.union([z.string().max(4096), z.array(z.string().max(128)).max(100)])
+  .transform(normalizeAllowedIps)
+  .refine(value => !value || value.split(',').every(validIpEntry), 'Invalid IP or CIDR');
+const createKeySchema = z.object({
+  name: z.string().trim().min(1).max(128),
+  allowedIps: allowedIpsSchema.optional(),
+}).strict();
+const updateKeySchema = z.object({
+  enabled: z.boolean().optional(),
+  allowedIps: allowedIpsSchema.optional(),
+}).strict();
 
 webRoutes.use('*', noStore);
 
@@ -66,7 +82,6 @@ webRoutes.get('/login', (c) => {
 webRoutes.post(
   '/login',
   requireSameOrigin,
-  rateLimit({ name: 'login', windowMs: 5 * 60_000, max: config.loginRateLimitMax }),
   async (c) => {
     const body = await c.req.parseBody();
     const user = String(body.user ?? '');
@@ -109,11 +124,49 @@ webRoutes.post('/api/notify', async (c) => {
     return c.json({ ok: false, error: 'invalid_body', sent: 0, details: parsed.error.flatten() }, 400);
   }
 
-  const outcome = await runNotify(parsed.data);
-  if (outcome.ok) return c.json({ ok: true as const, sent: outcome.sent }, 200);
+  try {
+    const result = await runNotify(parsed.data, 'admin', c.req.header('idempotency-key'));
+    return c.json(result, result.sent === 0 ? 202 : 200);
+  } catch (error) {
+    if (error instanceof QueueError) {
+      if (error.status === 503) c.header('Retry-After', String(Math.max(1, Math.ceil((error.retryAfterMs || 60_000) / 1000))));
+      return c.json({ ok: false, error: error.code }, error.status);
+    }
+    throw error;
+  }
+});
 
-  const status = outcome.error === 'invalid_expo_token' ? 400 : 502;
-  return c.json({ ok: false as const, error: outcome.error, sent: outcome.sent }, status);
+webRoutes.get('/api/jobs', (c) => c.json({
+  ok: true, jobs: queue.list().map(publicJob), counts: queue.stats(), ...queue.health(),
+}));
+
+webRoutes.get('/api/batches', (c) => {
+  const page = pageSchema.safeParse(c.req.query());
+  if (!page.success) return c.json({ ok: false, error: 'invalid_query' }, 400);
+  const { limit, offset } = page.data;
+  return c.json({ ok: true, batches: queue.batches(undefined, limit, offset), ...page.data, ...queue.health() });
+});
+
+webRoutes.get('/api/batches/:id', (c) => {
+  const batch = queue.batch(c.req.param('id'));
+  if (!batch) return c.json({ ok: false, error: 'not_found' }, 404);
+  const page = pageSchema.safeParse(c.req.query());
+  if (!page.success) return c.json({ ok: false, error: 'invalid_query' }, 400);
+  return c.json({ ok: true, batch, jobs: queue.batchJobs(batch.id, page.data.limit, page.data.offset).map(publicJob), ...page.data });
+});
+
+webRoutes.get('/api/jobs/:id', (c) => {
+  const job = queue.get(c.req.param('id'));
+  return job ? c.json({ ok: true, job: publicJob(job) }) : c.json({ ok: false, error: 'not_found' }, 404);
+});
+
+webRoutes.post('/api/jobs/:id/retry', (c) => {
+  try {
+    return c.json({ ok: true, job: publicJob(queue.retry(c.req.param('id'))) }, 202);
+  } catch (error) {
+    if (error instanceof QueueError) return c.json({ ok: false, error: error.code }, error.status);
+    throw error;
+  }
 });
 
 webRoutes.get('/api/keys', (c) => {
@@ -122,18 +175,16 @@ webRoutes.get('/api/keys', (c) => {
 });
 
 webRoutes.post('/api/keys', async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-  const name = String(body.name ?? '').trim();
-  if (!name || name.length > 128) {
-    return c.json({ ok: false, error: 'invalid_name' }, 400);
-  }
+  const parsed = createKeySchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ ok: false, error: 'invalid_body' }, 400);
+  const { name, allowedIps } = parsed.data;
 
   const { key, prefix, keyHash } = generateApiKey();
   const row = createApiKey({
     name,
     prefix,
     keyHash,
-    allowedIps: normalizeAllowedIps(body.allowedIps),
+    allowedIps,
   });
 
   return c.json({ ok: true, key, apiKey: serializeApiKey(row) }, 201);
@@ -144,7 +195,9 @@ webRoutes.patch('/api/keys/:id', async (c) => {
   const existing = getApiKey(id);
   if (!existing) return c.json({ ok: false, error: 'not_found' }, 404);
 
-  const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+  const parsed = updateKeySchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ ok: false, error: 'invalid_body' }, 400);
+  const body = parsed.data;
 
   if (typeof body.enabled === 'boolean') {
     setApiKeyEnabled(id, body.enabled);

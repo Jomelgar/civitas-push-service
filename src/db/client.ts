@@ -9,6 +9,7 @@ mkdirSync(dirname(config.databasePath), { recursive: true });
 export const db = new DatabaseSync(config.databasePath);
 
 db.exec('PRAGMA journal_mode = WAL;');
+db.exec('PRAGMA synchronous = FULL; PRAGMA busy_timeout = 5000;');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS devices (

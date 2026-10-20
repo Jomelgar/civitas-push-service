@@ -10,7 +10,8 @@
     "api-key:create": "tsx src/cli/api-key.ts create",
     "api-key:list": "tsx src/cli/api-key.ts list",
     "api-key:revoke": "tsx src/cli/api-key.ts revoke",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.8",
