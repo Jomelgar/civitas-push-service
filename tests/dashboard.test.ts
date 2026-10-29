@@ -15,6 +15,13 @@ test('dashboard queue scripts parse and show asynchronous state', () => {
   assert.ok(html.includes('/api/batches'));
   assert.ok(html.includes('batch-jobs-next'));
   assert.ok(html.includes('Notificación en cola:'));
+  assert.ok(html.includes('id="saveDevice"'));
+  assert.ok(html.includes('id="payload-preview"'));
+  assert.ok(html.includes('id="status"'));
+  assert.ok(html.includes('id="visitor"'));
+  assert.ok(html.includes('id="occurredAt"'));
+  assert.ok(html.includes('data-template="entry"'));
+  assert.ok(html.includes('payload.saveDevice = true'));
 });
 
 test('batch screen loads progress, opens recipient details, paginates and refreshes', async () => {

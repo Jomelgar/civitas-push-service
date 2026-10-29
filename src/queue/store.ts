@@ -128,7 +128,7 @@ export class QueueStore {
     });
   }
 
-  private insert(owner: string, deviceId: string, message: ExpoPushMessage, now: number, batchId: string | null, mode: Job['delivery_mode'], key?: string) {
+  private insert(owner: string, deviceId: string, message: ExpoPushMessage, now: number, batchId: string | null, mode: Job['delivery_mode'], key?: string, saveDevice = true) {
     const id = randomUUID();
     const payload = canonical(message);
     const token = String(message.to);
@@ -138,11 +138,13 @@ export class QueueStore {
       (id, owner, idempotency_key, fingerprint, device_id, token, payload, status, attempts, available_at, created_at, updated_at, batch_id, delivery_mode, priority)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(id, owner, key ?? null, fingerprint, deviceId, token, payload, mode === 'immediate' ? 'sending' : 'queued', mode === 'immediate' ? 1 : 0, now, now, now, batchId, mode, priority);
-    const timestamp = new Date(now).toISOString();
-    this.db.prepare(`INSERT INTO devices (id, expo_token, platform, enabled, created_at, updated_at, last_seen_at)
-      VALUES (?, ?, 'unknown', 1, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET expo_token = excluded.expo_token, updated_at = excluded.updated_at`)
-      .run(deviceId, token, timestamp, timestamp, timestamp);
+    if (saveDevice) {
+      const timestamp = new Date(now).toISOString();
+      this.db.prepare(`INSERT INTO devices (id, expo_token, platform, enabled, created_at, updated_at, last_seen_at)
+        VALUES (?, ?, 'unknown', 1, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET expo_token = excluded.expo_token, updated_at = excluded.updated_at`)
+        .run(deviceId, token, timestamp, timestamp, timestamp);
+    }
     return this.get(id)!;
   }
 
@@ -170,7 +172,7 @@ export class QueueStore {
     });
   }
 
-  beginImmediate(owner: string, deviceId: string, message: ExpoPushMessage, key?: string, now = Date.now()) {
+  beginImmediate(owner: string, deviceId: string, message: ExpoPushMessage, key?: string, now = Date.now(), saveDevice = true) {
     return this.transaction(() => {
       if (key) {
         const previous = this.db.prepare('SELECT * FROM push_jobs WHERE owner = ? AND idempotency_key = ?').get(owner, key) as unknown as Job | undefined;
@@ -184,7 +186,7 @@ export class QueueStore {
       if (active.count >= this.capacity) throw new QueueError('queue_full', 503);
       if (this.db.prepare('SELECT token FROM invalid_push_tokens WHERE token = ?').get(String(message.to))) throw new QueueError('device_not_registered', 400);
       const mode = lock.next_send_at > now ? 'queued' : 'immediate';
-      const job = this.insert(owner, deviceId, message, now, null, mode, key);
+      const job = this.insert(owner, deviceId, message, now, null, mode, key, saveDevice);
       if (mode === 'immediate') this.db.prepare('UPDATE push_worker SET next_send_at = ?, send_reservation = ? WHERE id = 1').run(now + 120_000, job.id);
       return { job, replayed: false };
     });

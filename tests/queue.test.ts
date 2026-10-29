@@ -482,3 +482,16 @@ test('queue priority applies to the actual worker transport across different bat
     await worker.stop();
   } finally { db.close(); }
 });
+
+test('beginImmediate saves the device only when requested', () => {
+  const db = database();
+  try {
+    const store = new QueueStore(db);
+    const skipped = store.beginImmediate('owner', 'no-save', message, undefined, 1000, false).job;
+    assert.equal(store.get(skipped.id)?.status, 'sending');
+    assert.equal(db.prepare("SELECT id FROM devices WHERE id = 'no-save'").get(), undefined);
+    const saved = store.beginImmediate('owner', 'save', message, undefined, 1000, true).job;
+    assert.equal(store.get(saved.id)?.status, 'queued');
+    assert.equal((db.prepare("SELECT id FROM devices WHERE id = 'save'").get() as { id: string }).id, 'save');
+  } finally { db.close(); }
+});

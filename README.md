@@ -67,16 +67,39 @@ Idempotency-Key: visita-123-aviso-1
 {
   "deviceId": "device-123",
   "token": "ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]",
-  "title": "Nueva visita",
-  "message": "Tienes una visita en la puerta",
-  "data": { "screen": "AccessPass", "visitId": "123" },
-  "priority": "high"
+  "title": "Entrada registrada",
+  "message": "Juan Pérez ingresó a tu propiedad",
+  "data": {
+    "type": "visit_entry",
+    "screen": "VisitStatus",
+    "visitId": "VIS-0001",
+    "status": "inside",
+    "visitor": "Juan Pérez",
+    "propertyLabel": "Casa 4",
+    "occurredAt": "2026-10-27T14:32:00-06:00",
+    "propertyId": 456,
+    "residenceId": 2
+  },
+  "priority": "high",
+  "saveDevice": false
 }
 ```
 
 La respuesta exitosa es `200` con `sent: 1`, `ticketId` y `job` en estado `awaiting_receipt`. Si no hay capacidad local, responde `202` con `sent: 0` y `job.id`. Un `429` de Expo o un ticket `MessageRateExceeded` también difiere el mismo trabajo y respeta el periodo de espera. Otros fallos de Expo devuelven `502`; un envío sin resultado confirmado queda fallido. `GET /v1/notify/{id}` permite consultar sus recibos.
 
-También admite `url` y `channelId`. El campo `screen` toma `Home` si se omite. El cuerpo HTTP individual está limitado a 16 KiB y el mensaje serializado para Expo a 4096 bytes, incluyendo datos adicionales. Expo o el proveedor pueden rechazar un mensaje por sus propios límites de codificación.
+También admite `url` y `channelId`. El campo `screen` toma `Splash` si se omite, salvo para eventos de visita: `visit_created`, `visit_registered`, `visit_entry` y `visit_exit` abren `VisitStatus`; `panic` abre `SecurityDashboard`. El cuerpo HTTP individual está limitado a 16 KiB y el mensaje serializado para Expo a 4096 bytes, incluyendo datos adicionales. Expo o el proveedor pueden rechazar un mensaje por sus propios límites de codificación.
+
+| Campo de `data` | Uso |
+| --- | --- |
+| `type` | Evento: `visit_created`, `visit_entry`, `visit_exit`, `panic`, etc. |
+| `screen` | Pantalla destino en la app. Si falta, se resuelve por `type`. |
+| `visitId` | Código de la visita. |
+| `status` | `pending`, `inside` o `outside`. |
+| `visitor` | Nombre del visitante para mostrar en la pantalla. |
+| `propertyLabel` | Etiqueta legible de la propiedad (p. ej. “Casa 4”). |
+| `occurredAt` | Fecha/hora ISO del evento. |
+
+`saveDevice` es opcional y por defecto `false`: el push se envía sin guardar ni actualizar el dispositivo. Con `true` se hace upsert en `devices` y se reactiva el token si estaba retirado, igual que `POST /v1/devices`. Los lotes conservan su comportamiento actual y guardan sus dispositivos.
 
 `Idempotency-Key` es opcional, de 1 a 128 caracteres. Reutilizarla con el mismo contenido y la misma API key devuelve el resultado registrado sin reenviar; si el envío está en curso devuelve `409 notification_in_progress`; con otro contenido devuelve `409`. Usa el mismo valor al reintentar una solicitud cuyo resultado HTTP sea incierto. La deduplicación dura mientras se conserva el trabajo.
 
@@ -149,6 +172,22 @@ Un error `DeviceNotRegistered` retira el token, deshabilita sus dispositivos y t
 En `/login` se inicia la sesión administrativa. El panel permite enviar una notificación individual inmediata, gestionar claves y consultar lotes desde la sección **Lotes**. La lista y el detalle tienen paginación, cantidades por estado, porcentaje y resultados por dispositivo. Se actualizan cada cinco segundos mientras esa sección está visible. La actividad reciente conserva acceso a los últimos 50 trabajos y a reintentos manuales de trabajos en cola.
 
 Las rutas `/api/batches` y `/api/batches/{id}` muestran los lotes con sesión administrativa. Las operaciones `/api/jobs`, `/api/jobs/{id}` y `POST /api/jobs/{id}/retry` requieren sesión; las mutaciones validan origen. Los individuales que se difieren por capacidad se procesan y se pueden reintentar como trabajos en cola. Los que se enviaron directamente conservan su seguimiento de recibos. Reintentar un trabajo de lote mantiene el identificador y reinicia el presupuesto de intentos. Los trabajos expirados requieren una nueva solicitud. Los tokens retirados requieren un nuevo registro antes de reintentar.
+
+El formulario de notificación incluye plantillas **Visita creada**, **Entrada** y **Salida** que precargan `type`, `status`, `screen`, título, mensaje y `occurredAt`. También muestra una vista previa del payload antes de enviarlo. La casilla **Guardar dispositivo** está desmarcada por defecto; si se marca, el envío registra el dispositivo como lo haría `POST /v1/devices`.
+
+## Colección Postman
+
+`postman_collection.json` concentra toda la API. La carpeta **Notify → Visitas** incluye:
+
+- `Visita creada`, `Entrada registrada` y `Salida registrada` sin guardar el dispositivo.
+- `Notificar y guardar dispositivo` con `saveDevice: true`.
+- Una prueba de `visit_entry` sin `screen` para validar la resolución automática a `VisitStatus`.
+- Un aviso sin `data`/`screen` para validar el destino `Splash` por defecto.
+- El formato legado que abre `AccessPass`.
+
+La carpeta **Lotes** incluye un lote con datos de visita (`Crear lote de visita (entrada)`) además del aviso general.
+
+La carpeta **Devices** incluye verificaciones para confirmar si el dispositivo se guardó o no. Las variables `visitId`, `propertyId`, `residenceId`, `visitor`, `propertyLabel`, `occurredAt` y `jobId` están preconfiguradas; `occurredAt` se actualiza automáticamente antes de cada request.
 
 ## Prioridad de procesamiento
 

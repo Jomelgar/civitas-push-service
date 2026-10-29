@@ -193,3 +193,15 @@ test('HTTP requests and login attempts remain authenticated without request thro
   assert.equal(response.status, 302);
   assert.ok(response.headers.get('set-cookie'));
 });
+
+test('notify only saves the device when saveDevice is true', async (context) => {
+  context.mock.method(globalThis, 'fetch', async () => Response.json({ data: [{ status: 'ok', id: 'save-device-ticket' }] }));
+  db.prepare('UPDATE push_worker SET next_send_at = 0').run();
+  const skipped = await send({ deviceId: 'api-no-save', token: 'ExponentPushToken[api-no-save]', message: 'Hola' }, firstKey, 'api-no-save');
+  assert.equal(skipped.status, 200);
+  assert.equal(db.prepare("SELECT id FROM devices WHERE id = 'api-no-save'").get(), undefined);
+
+  const saved = await send({ deviceId: 'api-save', token: 'ExponentPushToken[api-save]', message: 'Hola', saveDevice: true }, firstKey, 'api-save');
+  assert.ok([200, 202].includes(saved.status));
+  assert.equal((db.prepare("SELECT id FROM devices WHERE id = 'api-save'").get() as { id: string }).id, 'api-save');
+});
