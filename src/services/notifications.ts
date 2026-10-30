@@ -16,12 +16,18 @@ const notifyDataSchema = z
     propertyLabel: z.string().max(256).optional().openapi({ example: 'Casa 4' }),
     occurredAt: z.string().max(64).optional().openapi({ example: '2026-10-27T14:32:00-06:00' }),
     propertyId: z.number().int().optional().openapi({ example: 456 }),
-    residenceId: z.number().int().optional().openapi({ example: 2 }),
+    residenceId: z.string().max(128).optional().openapi({ example: '2' }),
   })
   .passthrough()
   .openapi('NotifyData');
 
 const VISIT_EVENT_TYPES = new Set(['visit_created', 'visit_registered', 'visit_entry', 'visit_exit']);
+
+export const PANIC_SOUND = 'panic.wav';
+export const PANIC_CHANNEL = 'panic_alarm';
+export const PANIC_INTERRUPTION_LEVEL = 'time-sensitive' as const;
+
+const SOUND_NAME_PATTERN = /^[A-Za-z0-9_-]+\.(wav|caf|aiff)$/;
 
 /**
  * Resuelve la pantalla destino en la app.
@@ -64,7 +70,23 @@ export const notifySchema = z
       .enum(['default', 'normal', 'high'])
       .optional()
       .openapi({ example: 'high', description: 'Prioridad de procesamiento en cola y de envío a Expo: high, normal, default. Sin valor se usa default.' }),
-    channelId: z.string().max(64).optional().openapi({ example: 'panic' }),
+    channelId: z.string().max(64).optional().openapi({ example: PANIC_CHANNEL }),
+    sound: z
+      .string()
+      .max(128)
+      .regex(SOUND_NAME_PATTERN, 'invalid_sound')
+      .optional()
+      .openapi({
+        example: PANIC_SOUND,
+        description: 'Sonido personalizado incluido en la app (.wav, .caf o .aiff). Los eventos de pánico usan "panic.wav" por defecto.',
+      }),
+    interruptionLevel: z
+      .enum(['active', 'time-sensitive', 'passive'])
+      .optional()
+      .openapi({
+        example: PANIC_INTERRUPTION_LEVEL,
+        description: 'Nivel de interrupción en iOS. Los eventos de pánico usan "time-sensitive" por defecto.',
+      }),
   })
   .openapi('NotifyRequest');
 
@@ -76,11 +98,17 @@ export function validateIdempotency(key?: string) {
 
 export function buildMessage(input: NotifyInput): ExpoPushMessage {
   if (!Expo.isExpoPushToken(input.token)) throw new QueueError('invalid_expo_token', 400);
+  const isPanic = input.data?.type === 'panic';
   const data = { ...input.data, screen: resolveScreen(input.data), ...(input.url ? { url: input.url } : {}) };
+  const channelId = input.channelId ?? (isPanic ? PANIC_CHANNEL : undefined);
+  const priority = input.priority ?? (isPanic ? 'high' : undefined);
+  const interruptionLevel = input.interruptionLevel ?? (isPanic ? PANIC_INTERRUPTION_LEVEL : undefined);
   const message: ExpoPushMessage = {
-    to: input.token, title: input.title ?? 'Notificación', body: input.message, sound: 'default', data,
-    ...(input.priority ? { priority: input.priority } : {}),
-    ...(input.channelId ? { channelId: input.channelId } : {}),
+    to: input.token, title: input.title ?? 'Notificación', body: input.message,
+    sound: input.sound ?? (isPanic ? PANIC_SOUND : 'default'), data,
+    ...(priority ? { priority } : {}),
+    ...(channelId ? { channelId } : {}),
+    ...(interruptionLevel ? { interruptionLevel } : {}),
   };
   if (Buffer.byteLength(JSON.stringify(message), 'utf8') > 4096) throw new QueueError('payload_too_large', 400);
   return message;

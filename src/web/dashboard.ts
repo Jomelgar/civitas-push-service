@@ -95,7 +95,7 @@ function notifyPanel(): string {
                 </div>
                 <div class="row">
                   <label>Residence ID <span class="muted small">(opcional)</span>
-                    <input id="residenceId" type="number" placeholder="2" />
+                    <input id="residenceId" placeholder="2" />
                   </label>
                   <label>Prioridad <span class="muted small">(opcional)</span>
                     <select id="priority">
@@ -106,7 +106,7 @@ function notifyPanel(): string {
                     </select>
                   </label>
                 </div>
-                <label>Canal <span class="muted small">(opcional · p. ej. panic)</span>
+                <label>Canal <span class="muted small">(opcional · p. ej. panic_alarm)</span>
                   <input id="channelId" placeholder="default" />
                 </label>
                 <datalist id="notify-type-options">
@@ -232,7 +232,7 @@ function dashboardScript(): string {
         if (propertyLabel) data.propertyLabel = propertyLabel;
         if (occurredAt) data.occurredAt = occurredAt;
         if (propertyId) data.propertyId = Number(propertyId);
-        if (residenceId) data.residenceId = Number(residenceId);
+        if (residenceId) data.residenceId = residenceId;
         if (Object.keys(data).length) payload.data = data;
 
         var priority = value('priority');

@@ -78,7 +78,7 @@ Idempotency-Key: visita-123-aviso-1
     "propertyLabel": "Casa 4",
     "occurredAt": "2026-10-27T14:32:00-06:00",
     "propertyId": 456,
-    "residenceId": 2
+    "residenceId": "2"
   },
   "priority": "high",
   "saveDevice": false
@@ -87,7 +87,15 @@ Idempotency-Key: visita-123-aviso-1
 
 La respuesta exitosa es `200` con `sent: 1`, `ticketId` y `job` en estado `awaiting_receipt`. Si no hay capacidad local, responde `202` con `sent: 0` y `job.id`. Un `429` de Expo o un ticket `MessageRateExceeded` también difiere el mismo trabajo y respeta el periodo de espera. Otros fallos de Expo devuelven `502`; un envío sin resultado confirmado queda fallido. `GET /v1/notify/{id}` permite consultar sus recibos.
 
-También admite `url` y `channelId`. El campo `screen` toma `Splash` si se omite, salvo para eventos de visita: `visit_created`, `visit_registered`, `visit_entry` y `visit_exit` abren `VisitStatus`; `panic` abre `SecurityDashboard`. El cuerpo HTTP individual está limitado a 16 KiB y el mensaje serializado para Expo a 4096 bytes, incluyendo datos adicionales. Expo o el proveedor pueden rechazar un mensaje por sus propios límites de codificación.
+También admite `url`, `channelId`, `sound` e `interruptionLevel`. El campo `screen` toma `Splash` si se omite, salvo para eventos de visita: `visit_created`, `visit_registered`, `visit_entry` y `visit_exit` abren `VisitStatus`; `panic` abre `SecurityDashboard`. El cuerpo HTTP individual está limitado a 16 KiB y el mensaje serializado para Expo a 4096 bytes, incluyendo datos adicionales. Expo o el proveedor pueden rechazar un mensaje por sus propios límites de codificación.
+
+### Sonido de emergencia para pánico
+
+Los eventos con `data.type: "panic"` usan por defecto `sound: "panic.wav"`, `channelId: "panic_alarm"`, `interruptionLevel: "time-sensitive"` y `priority: "high"`. Estos valores se pueden sobrescribir explícitamente en la solicitud.
+
+- **Android 8+**: el sonido lo define el canal. La app debe crear el canal `panic_alarm` con el sonido e importancia máxima antes de recibir el aviso. Si el canal no existe, Android no muestra la notificación. Los canales son inmutables: si ya existe un canal con otro sonido, hay que usar un identificador nuevo.
+- **iOS**: `sound` debe incluir la extensión (`.wav`, `.caf` o `.aiff`), durar menos de 30 segundos y estar empaquetado en la app. `time-sensitive` interrumpe Focus pero no requiere la aprobación de Apple que exigen las alertas críticas; sí requiere habilitar la capacidad *Time Sensitive Notifications* en el proyecto iOS.
+- El sonido se reproduce una vez por notificación; no es una alarma en bucle.
 
 | Campo de `data` | Uso |
 | --- | --- |

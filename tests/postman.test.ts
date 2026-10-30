@@ -21,7 +21,10 @@ test('the single Postman collection contains the visit notification flows', () =
   assert.equal(collection.info.name, 'Civitas Access API');
   assert.ok(collection.event.some((entry) => entry.script.exec.join('\n').includes('occurredAt')));
   const variableKeys = collection.variable.map((entry) => entry.key);
-  for (const key of ['visitId', 'propertyId', 'residenceId', 'visitor', 'propertyLabel', 'occurredAt', 'jobId']) {
+  for (const key of [
+    'visitId', 'propertyId', 'residenceId', 'visitor', 'propertyLabel', 'occurredAt', 'jobId',
+    'panicSound', 'panicChannel', 'interruptionLevel',
+  ]) {
     assert.ok(variableKeys.includes(key), key);
   }
 
@@ -35,7 +38,9 @@ test('the single Postman collection contains the visit notification flows', () =
     'Entrada sin screen (prueba de pantalla automática)',
     'Formato legado AccessPass',
     'Aviso sin screen (Splash por defecto)',
+    'Pánico (ejemplo)',
     'Crear lote de visita (entrada)',
+    'Crear lote de pánico (guardias)',
     'Verificar que no se guardó el dispositivo',
     'Verificar que sí se guardó el dispositivo',
   ]) {
@@ -68,4 +73,18 @@ test('the single Postman collection contains the visit notification flows', () =
   const splash = requests.find((request) => request.name === 'Aviso sin screen (Splash por defecto)');
   assert.equal(splash?.request?.body?.raw?.includes('"screen"'), false);
   assert.equal(splash?.request?.body?.raw?.includes('"data"'), false);
+
+  const panic = requests.find((request) => request.name === 'Pánico (ejemplo)');
+  assert.ok(panic?.request?.body?.raw?.includes('"type": "panic"'));
+  assert.ok(panic?.request?.body?.raw?.includes('"sound": "{{panicSound}}"'));
+  assert.ok(panic?.request?.body?.raw?.includes('"channelId": "{{panicChannel}}"'));
+  assert.ok(panic?.request?.body?.raw?.includes('"interruptionLevel": "{{interruptionLevel}}"'));
+  assert.ok(panic?.request?.body?.raw?.includes('"residenceId": "{{residenceId}}"'));
+
+  const panicBatch = requests.find((request) => request.name === 'Crear lote de pánico (guardias)');
+  assert.ok(panicBatch?.request?.body?.raw?.includes('"type": "panic"'));
+  assert.ok(panicBatch?.request?.body?.raw?.includes('"sound": "{{panicSound}}"'));
+  assert.ok(panicBatch?.request?.body?.raw?.includes('"channelId": "{{panicChannel}}"'));
+  assert.ok(panicBatch?.request?.body?.raw?.includes('"interruptionLevel": "{{interruptionLevel}}"'));
+  assert.ok(panicBatch?.request?.body?.raw?.includes('"devices"'));
 });
