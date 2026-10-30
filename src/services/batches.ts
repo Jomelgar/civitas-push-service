@@ -2,7 +2,7 @@ import { z } from '@hono/zod-openapi';
 import { notifySchema, buildMessage, validateIdempotency } from './notifications';
 import { queue } from '../queue/runtime';
 
-export const batchSchema = notifySchema.omit({ deviceId: true, token: true }).extend({
+export const batchSchema = notifySchema.omit({ deviceId: true, token: true, saveDevice: true }).extend({
   name: z.string().trim().min(1).max(128).optional(),
   devices: z.array(notifySchema.pick({ deviceId: true, token: true, data: true }).strict()).min(1).max(1000),
 }).strict().superRefine((batch, context) => {

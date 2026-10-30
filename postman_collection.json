@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "c1v1t4s-4cc3-0000-0000-000000000001",
     "name": "Civitas Access API",
-    "description": "API de registro de dispositivos y envío de notificaciones push (Expo) de Civitas Access.\n\nEndpoints bajo /v1, todos requieren API key. Configura la variable `apiKey` (se envía como header `X-API-Key`). Documentación interactiva en /doc (OpenAPI) y /ui (Swagger UI, requiere sesión).",
+    "description": "API de registro de dispositivos y envío de notificaciones push (Expo) de Civitas Access.\n\nTodos los endpoints bajo /v1 requieren API key; cada request ya incluye el header `X-API-Key: {{apiKey}}`, así que solo debes configurar la variable `apiKey`. `/health` es público y `/doc`/`/ui` usan sesión web. Documentación interactiva en /doc (OpenAPI) y /ui (Swagger UI, requiere sesión).\n\nLa carpeta Notify → Visitas contiene los eventos `visit_created`, `visit_entry` y `visit_exit` con sus pruebas de `saveDevice` y de pantalla automática `VisitStatus`. `occurredAt` se actualiza automáticamente antes de cada request.\n\nEl evento `panic` usa el sonido de emergencia `panic.wav`, el canal Android `panic_alarm` y `interruptionLevel: time-sensitive` en iOS. La app móvil debe incluir el sonido y crear el canal antes de recibir el aviso. En Android 8+ el sonido lo define el canal, no el payload.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -27,36 +27,56 @@
       "type": "string"
     },
     {
+      "key": "visitId",
+      "value": "VIS-0001",
+      "type": "string"
+    },
+    {
+      "key": "propertyId",
+      "value": "456",
+      "type": "string"
+    },
+    {
+      "key": "residenceId",
+      "value": "2",
+      "type": "string"
+    },
+    {
+      "key": "visitor",
+      "value": "Juan Pérez",
+      "type": "string"
+    },
+    {
+      "key": "propertyLabel",
+      "value": "Casa 4",
+      "type": "string"
+    },
+    {
+      "key": "occurredAt",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "jobId",
       "value": "",
       "type": "string"
     },
     {
-      "key": "batchId",
-      "value": "",
+      "key": "panicSound",
+      "value": "panic.wav",
+      "type": "string"
+    },
+    {
+      "key": "panicChannel",
+      "value": "panic_alarm",
+      "type": "string"
+    },
+    {
+      "key": "interruptionLevel",
+      "value": "time-sensitive",
       "type": "string"
     }
   ],
-  "auth": {
-    "type": "apikey",
-    "apikey": [
-      {
-        "key": "key",
-        "value": "X-API-Key",
-        "type": "string"
-      },
-      {
-        "key": "value",
-        "value": "{{apiKey}}",
-        "type": "string"
-      },
-      {
-        "key": "in",
-        "value": "header",
-        "type": "string"
-      }
-    ]
-  },
   "item": [
     {
       "name": "Health",
@@ -100,7 +120,12 @@
           ],
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/v1/devices",
               "host": [
@@ -135,6 +160,10 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
               }
             ],
             "body": {
@@ -180,6 +209,10 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
               }
             ],
             "body": {
@@ -222,7 +255,12 @@
           ],
           "request": {
             "method": "DELETE",
-            "header": [],
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/v1/devices/{{deviceId}}",
               "host": [
@@ -241,6 +279,80 @@
               ]
             },
             "description": "Elimina un dispositivo por su id."
+          },
+          "response": []
+        },
+        {
+          "name": "Verificar que no se guardó el dispositivo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const devices = pm.response.json().devices || [];",
+                  "pm.test('El dispositivo no está guardado', () => pm.expect(devices.some(d => d.deviceId === pm.collectionVariables.get('deviceId'))).to.eql(false));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/devices",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "devices"
+              ]
+            },
+            "description": "Ejecutar después de un envío sin saveDevice. Falla si el dispositivo fue guardado."
+          },
+          "response": []
+        },
+        {
+          "name": "Verificar que sí se guardó el dispositivo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const devices = pm.response.json().devices || [];",
+                  "pm.test('El dispositivo está guardado', () => pm.expect(devices.some(d => d.deviceId === pm.collectionVariables.get('deviceId'))).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/devices",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "devices"
+              ]
+            },
+            "description": "Ejecutar después del envío con saveDevice true. Falla si el dispositivo no fue guardado."
           },
           "response": []
         }
@@ -271,14 +383,13 @@
                 "value": "application/json"
               },
               {
-                "key": "Idempotency-Key",
-                "value": "{{$guid}}",
-                "type": "text"
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
               }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"deviceId\": \"{{deviceId}}\",\n  \"token\": \"{{expoToken}}\",\n  \"title\": \"Civitas Access\",\n  \"message\": \"Tienes una visita en la puerta.\",\n  \"url\": \"app://visit/123\",\n  \"data\": {\n    \"type\": \"visit_registered\",\n    \"screen\": \"AccessPass\",\n    \"visitId\": \"VIS-0001\",\n    \"propertyId\": 456,\n    \"residenceId\": 2\n  },\n  \"priority\": \"high\",\n  \"channelId\": \"default\"\n}",
+              "raw": "{\n  \"deviceId\": \"{{deviceId}}\",\n  \"token\": \"{{expoToken}}\",\n  \"title\": \"Entrada registrada\",\n  \"message\": \"{{visitor}} ingresó a tu propiedad\",\n  \"data\": {\n    \"type\": \"visit_entry\",\n    \"screen\": \"VisitStatus\",\n    \"status\": \"inside\",\n    \"visitId\": \"{{visitId}}\",\n    \"visitor\": \"{{visitor}}\",\n    \"propertyLabel\": \"{{propertyLabel}}\",\n    \"occurredAt\": \"{{occurredAt}}\",\n    \"propertyId\": {{propertyId}},\n    \"residenceId\": \"{{residenceId}}\"\n  },\n  \"priority\": \"high\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -295,12 +406,330 @@
                 "notify"
               ]
             },
-            "description": "Intenta enviar inmediatamente. Devuelve 200 al aceptar Expo o 202 con job.id si falta capacidad y se encola. Consultar GET /v1/notify/{id}."
+            "description": "Notificación de visita con pantalla VisitStatus. Intenta enviar inmediatamente. Devuelve 200 al aceptar Expo o 202 con job.id si falta capacidad y se encola. Consultar GET /v1/notify/{id}."
           },
           "response": []
         },
         {
-          "name": "Visita registrada (ejemplo)",
+          "name": "Visitas",
+          "item": [
+            {
+              "name": "Visita creada (sin guardar dispositivo)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Enviada o encolada', () => pm.expect([200, 202]).to.include(pm.response.code));",
+                      "const body = pm.response.json();",
+                      "if (body.job) pm.collectionVariables.set('jobId', body.job.id);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-API-Key",
+                    "value": "{{apiKey}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"deviceId\": \"{{deviceId}}\",\n  \"token\": \"{{expoToken}}\",\n  \"title\": \"Visita registrada\",\n  \"message\": \"{{visitor}} fue registrado en tu propiedad\",\n  \"data\": {\n    \"type\": \"visit_created\",\n    \"screen\": \"VisitStatus\",\n    \"status\": \"pending\",\n    \"visitId\": \"{{visitId}}\",\n    \"visitor\": \"{{visitor}}\",\n    \"propertyLabel\": \"{{propertyLabel}}\",\n    \"occurredAt\": \"{{occurredAt}}\",\n    \"propertyId\": {{propertyId}},\n    \"residenceId\": \"{{residenceId}}\"\n  },\n  \"priority\": \"high\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/v1/notify",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "v1",
+                    "notify"
+                  ]
+                },
+                "description": "Notifica una visita recién creada. `saveDevice` se omite, por lo que el dispositivo no se guarda."
+              },
+              "response": []
+            },
+            {
+              "name": "Entrada registrada (sin guardar dispositivo)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Enviada o encolada', () => pm.expect([200, 202]).to.include(pm.response.code));",
+                      "const body = pm.response.json();",
+                      "if (body.job) pm.collectionVariables.set('jobId', body.job.id);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-API-Key",
+                    "value": "{{apiKey}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"deviceId\": \"{{deviceId}}\",\n  \"token\": \"{{expoToken}}\",\n  \"title\": \"Entrada registrada\",\n  \"message\": \"{{visitor}} ingresó a tu propiedad\",\n  \"data\": {\n    \"type\": \"visit_entry\",\n    \"screen\": \"VisitStatus\",\n    \"status\": \"inside\",\n    \"visitId\": \"{{visitId}}\",\n    \"visitor\": \"{{visitor}}\",\n    \"propertyLabel\": \"{{propertyLabel}}\",\n    \"occurredAt\": \"{{occurredAt}}\",\n    \"propertyId\": {{propertyId}},\n    \"residenceId\": \"{{residenceId}}\"\n  },\n  \"priority\": \"high\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/v1/notify",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "v1",
+                    "notify"
+                  ]
+                },
+                "description": "Notifica una entrada. La app debe abrir VisitStatus con estado inside."
+              },
+              "response": []
+            },
+            {
+              "name": "Salida registrada (sin guardar dispositivo)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Enviada o encolada', () => pm.expect([200, 202]).to.include(pm.response.code));",
+                      "const body = pm.response.json();",
+                      "if (body.job) pm.collectionVariables.set('jobId', body.job.id);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-API-Key",
+                    "value": "{{apiKey}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"deviceId\": \"{{deviceId}}\",\n  \"token\": \"{{expoToken}}\",\n  \"title\": \"Salida registrada\",\n  \"message\": \"{{visitor}} salió de tu propiedad\",\n  \"data\": {\n    \"type\": \"visit_exit\",\n    \"screen\": \"VisitStatus\",\n    \"status\": \"outside\",\n    \"visitId\": \"{{visitId}}\",\n    \"visitor\": \"{{visitor}}\",\n    \"propertyLabel\": \"{{propertyLabel}}\",\n    \"occurredAt\": \"{{occurredAt}}\",\n    \"propertyId\": {{propertyId}},\n    \"residenceId\": \"{{residenceId}}\"\n  },\n  \"priority\": \"high\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/v1/notify",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "v1",
+                    "notify"
+                  ]
+                },
+                "description": "Notifica una salida. La app debe abrir VisitStatus con estado outside."
+              },
+              "response": []
+            },
+            {
+              "name": "Notificar y guardar dispositivo",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Enviada o encolada', () => pm.expect([200, 202]).to.include(pm.response.code));",
+                      "const body = pm.response.json();",
+                      "if (body.job) pm.collectionVariables.set('jobId', body.job.id);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-API-Key",
+                    "value": "{{apiKey}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"deviceId\": \"{{deviceId}}\",\n  \"token\": \"{{expoToken}}\",\n  \"title\": \"Entrada registrada\",\n  \"message\": \"{{visitor}} ingresó a tu propiedad\",\n  \"saveDevice\": true,\n  \"data\": {\n    \"type\": \"visit_entry\",\n    \"screen\": \"VisitStatus\",\n    \"status\": \"inside\",\n    \"visitId\": \"{{visitId}}\",\n    \"visitor\": \"{{visitor}}\",\n    \"propertyLabel\": \"{{propertyLabel}}\",\n    \"occurredAt\": \"{{occurredAt}}\",\n    \"propertyId\": {{propertyId}},\n    \"residenceId\": \"{{residenceId}}\"\n  },\n  \"priority\": \"high\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/v1/notify",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "v1",
+                    "notify"
+                  ]
+                },
+                "description": "Igual que la entrada, pero con saveDevice true: registra o actualiza el dispositivo y reactiva el token si estaba retirado."
+              },
+              "response": []
+            },
+            {
+              "name": "Entrada sin screen (prueba de pantalla automática)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Enviada o encolada', () => pm.expect([200, 202]).to.include(pm.response.code));",
+                      "const body = pm.response.json();",
+                      "if (body.job) pm.collectionVariables.set('jobId', body.job.id);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-API-Key",
+                    "value": "{{apiKey}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"deviceId\": \"{{deviceId}}\",\n  \"token\": \"{{expoToken}}\",\n  \"title\": \"Entrada registrada\",\n  \"message\": \"{{visitor}} ingresó a tu propiedad\",\n  \"data\": {\n    \"type\": \"visit_entry\",\n    \"status\": \"inside\",\n    \"visitId\": \"{{visitId}}\",\n    \"visitor\": \"{{visitor}}\",\n    \"propertyLabel\": \"{{propertyLabel}}\",\n    \"occurredAt\": \"{{occurredAt}}\",\n    \"propertyId\": {{propertyId}},\n    \"residenceId\": \"{{residenceId}}\"\n  },\n  \"priority\": \"high\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/v1/notify",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "v1",
+                    "notify"
+                  ]
+                },
+                "description": "Omite screen. El backend debe resolver VisitStatus a partir de type=visit_entry."
+              },
+              "response": []
+            },
+            {
+              "name": "Formato legado AccessPass",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Enviada o encolada', () => pm.expect([200, 202]).to.include(pm.response.code));",
+                      "const body = pm.response.json();",
+                      "if (body.job) pm.collectionVariables.set('jobId', body.job.id);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-API-Key",
+                    "value": "{{apiKey}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"deviceId\": \"{{deviceId}}\",\n  \"token\": \"{{expoToken}}\",\n  \"title\": \"Visita registrada\",\n  \"message\": \"Tienes una visita en la puerta\",\n  \"data\": {\n    \"type\": \"visit_registered\",\n    \"screen\": \"AccessPass\",\n    \"visitId\": \"{{visitId}}\",\n    \"propertyId\": {{propertyId}},\n    \"residenceId\": \"{{residenceId}}\"\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/v1/notify",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "v1",
+                    "notify"
+                  ]
+                },
+                "description": "Mantiene el payload anterior que abría AccessPass."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Aviso sin screen (Splash por defecto)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Enviada o encolada', () => pm.expect([200, 202]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "if (body.job) pm.collectionVariables.set('jobId', body.job.id);"
+                ]
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
@@ -309,14 +738,13 @@
                 "value": "application/json"
               },
               {
-                "key": "Idempotency-Key",
-                "value": "{{$guid}}",
-                "type": "text"
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
               }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"deviceId\": \"{{deviceId}}\",\n  \"token\": \"{{expoToken}}\",\n  \"title\": \"Visita registrada\",\n  \"message\": \"Juan Pérez fue registrado en tu propiedad\",\n  \"data\": {\n    \"type\": \"visit_registered\",\n    \"visitId\": \"VIS-0001\",\n    \"propertyId\": 456,\n    \"residenceId\": 2,\n    \"screen\": \"AccessPass\"\n  }\n}",
+              "raw": "{\n  \"deviceId\": \"{{deviceId}}\",\n  \"token\": \"{{expoToken}}\",\n  \"title\": \"Aviso general\",\n  \"message\": \"Nuevo aviso de Civitas\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -333,21 +761,9 @@
                 "notify"
               ]
             },
-            "description": "Intenta enviar inmediatamente. Devuelve 200 al aceptar Expo o 202 con job.id si falta capacidad y se encola. Consultar GET /v1/notify/{id}."
+            "description": "Omite data/screen. El backend resuelve Splash, que revalida sesión y luego navega."
           },
-          "response": [],
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Enviada o encolada', () => pm.expect([200, 202]).to.include(pm.response.code));",
-                  "pm.collectionVariables.set('jobId', pm.response.json().job.id);"
-                ]
-              }
-            }
-          ]
+          "response": []
         },
         {
           "name": "Pánico (ejemplo)",
@@ -359,14 +775,13 @@
                 "value": "application/json"
               },
               {
-                "key": "Idempotency-Key",
-                "value": "{{$guid}}",
-                "type": "text"
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
               }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"deviceId\": \"{{deviceId}}\",\n  \"token\": \"{{expoToken}}\",\n  \"title\": \"🚨 PÁNICO\",\n  \"message\": \"Botón de pánico activado en Casa 4\",\n  \"data\": {\n    \"type\": \"panic\",\n    \"residenceId\": 2,\n    \"propertyId\": 456,\n    \"screen\": \"SecurityDashboard\"\n  },\n  \"priority\": \"high\",\n  \"channelId\": \"panic\"\n}",
+              "raw": "{\n  \"deviceId\": \"{{deviceId}}\",\n  \"token\": \"{{expoToken}}\",\n  \"title\": \"🚨 PÁNICO\",\n  \"message\": \"Botón de pánico activado en {{propertyLabel}}\",\n  \"sound\": \"{{panicSound}}\",\n  \"channelId\": \"{{panicChannel}}\",\n  \"interruptionLevel\": \"{{interruptionLevel}}\",\n  \"data\": {\n    \"type\": \"panic\",\n    \"residenceId\": \"{{residenceId}}\",\n    \"propertyId\": {{propertyId}},\n    \"screen\": \"SecurityDashboard\"\n  },\n  \"priority\": \"high\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -383,7 +798,7 @@
                 "notify"
               ]
             },
-            "description": "Intenta enviar inmediatamente. Devuelve 200 al aceptar Expo o 202 con job.id si falta capacidad y se encola. Consultar GET /v1/notify/{id}."
+            "description": "Notificación de pánico con sonido de emergencia. Usa `panic.wav`, el canal Android `panic_alarm` y `time-sensitive` en iOS. El canal debe existir en la app o Android no mostrará el aviso. Devuelve 200 al aceptar Expo o 202 con job.id si falta capacidad y se encola. Consultar GET /v1/notify/{id}."
           },
           "response": [],
           "event": [
@@ -393,7 +808,16 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Enviada o encolada', () => pm.expect([200, 202]).to.include(pm.response.code));",
-                  "pm.collectionVariables.set('jobId', pm.response.json().job.id);"
+                  "const body = pm.response.json();",
+                  "const raw = pm.request.body.raw || '';",
+                  "pm.test('payload de pánico con sonido de emergencia', () => {",
+                  "  pm.expect(raw).to.include('\"type\": \"panic\"');",
+                  "  pm.expect(raw).to.include('\"sound\"');",
+                  "  pm.expect(raw).to.include('\"channelId\"');",
+                  "  pm.expect(raw).to.include('\"interruptionLevel\"');",
+                  "  pm.expect(raw).to.include('\"residenceId\"');",
+                  "});",
+                  "if (body.job) pm.collectionVariables.set('jobId', body.job.id);"
                 ]
               }
             }
@@ -485,6 +909,92 @@
           ]
         },
         {
+          "name": "Crear lote de visita (entrada)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "visita-{{visitId}}-entrada-{{$guid}}"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/batches",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Visita entrada {{visitId}}\",\n  \"title\": \"Entrada registrada\",\n  \"message\": \"{{visitor}} ingresó a tu propiedad\",\n  \"data\": {\n    \"type\": \"visit_entry\",\n    \"screen\": \"VisitStatus\",\n    \"status\": \"inside\",\n    \"visitId\": \"{{visitId}}\",\n    \"visitor\": \"{{visitor}}\",\n    \"propertyLabel\": \"{{propertyLabel}}\",\n    \"occurredAt\": \"{{occurredAt}}\",\n    \"propertyId\": {{propertyId}},\n    \"residenceId\": \"{{residenceId}}\"\n  },\n  \"priority\": \"high\",\n  \"devices\": [\n    {\n      \"deviceId\": \"{{deviceId}}\",\n      \"token\": \"{{expoToken}}\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Lote con datos de visita. Se encola, guarda los dispositivos y el worker envía a Expo."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('202 Accepted', () => pm.response.to.have.status(202));",
+                  "pm.collectionVariables.set('batchId', pm.response.json().batch.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Crear lote de pánico (guardias)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "panico-{{residenceId}}-{{$guid}}"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/batches",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Pánico {{propertyLabel}}\",\n  \"title\": \"🚨 PÁNICO\",\n  \"message\": \"Botón de pánico activado en {{propertyLabel}}\",\n  \"sound\": \"{{panicSound}}\",\n  \"channelId\": \"{{panicChannel}}\",\n  \"interruptionLevel\": \"{{interruptionLevel}}\",\n  \"priority\": \"high\",\n  \"data\": {\n    \"type\": \"panic\",\n    \"residenceId\": \"{{residenceId}}\",\n    \"propertyId\": {{propertyId}},\n    \"screen\": \"SecurityDashboard\"\n  },\n  \"devices\": [\n    {\n      \"deviceId\": \"{{deviceId}}\",\n      \"token\": \"{{expoToken}}\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Lote de pánico para los guardias del residencial. Hereda `sound`, `channelId` e `interruptionLevel` del request individual."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('202 Accepted', () => pm.response.to.have.status(202));",
+                  "const raw = pm.request.body.raw || '';",
+                  "pm.test('lote de pánico con sonido de emergencia', () => {",
+                  "  pm.expect(raw).to.include('\"type\": \"panic\"');",
+                  "  pm.expect(raw).to.include('\"sound\"');",
+                  "  pm.expect(raw).to.include('\"channelId\"');",
+                  "  pm.expect(raw).to.include('\"interruptionLevel\"');",
+                  "  pm.expect(raw).to.include('\"devices\"');",
+                  "});",
+                  "pm.collectionVariables.set('batchId', pm.response.json().batch.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Listar lotes",
           "request": {
             "method": "GET",
@@ -506,6 +1016,17 @@
           }
         }
       ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.variables.set('occurredAt', new Date().toISOString());"
+        ]
+      }
     }
   ]
 }

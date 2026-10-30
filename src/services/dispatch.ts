@@ -9,7 +9,9 @@ const transport = createExpoTransport(config.expoAccessToken);
 export async function runNotify(input: NotifyInput, owner = 'admin', key?: string) {
   validateIdempotency(key);
   const message = buildMessage(input);
-  const { job, replayed } = queue.beginImmediate(owner, input.deviceId, message, key);
+  const saveDevice = input.saveDevice === true;
+  if (saveDevice) queue.registerToken(input.token);
+  const { job, replayed } = queue.beginImmediate(owner, input.deviceId, message, key, Date.now(), saveDevice);
   if (job.delivery_mode === 'queued' && (job.status === 'queued' || job.status === 'sending')) {
     return { ok: true as const, sent: 0 as const, job: publicJob(job) };
   }
