@@ -8,6 +8,7 @@ const collection = JSON.parse(
   readFileSync(new URL('../postman_collection.json', import.meta.url), 'utf8')
 ) as {
   info: { name: string };
+  auth?: { type: string; apikey: Array<{ key: string; value: string }> };
   event: Array<{ listen: string; script: { exec: string[] } }>;
   variable: Array<{ key: string }>;
   item: Array<{ item?: Request[] } & Request>;
@@ -19,6 +20,11 @@ function flatten(items: Array<{ item?: Request[] } & Request>): Request[] {
 
 test('the single Postman collection contains the visit notification flows', () => {
   assert.equal(collection.info.name, 'Civitas Access API');
+  assert.equal(collection.auth?.type, 'apikey');
+  const authEntries = collection.auth?.apikey ?? [];
+  assert.equal(authEntries.find((entry) => entry.key === 'key')?.value, 'X-API-Key');
+  assert.equal(authEntries.find((entry) => entry.key === 'value')?.value, '{{apiKey}}');
+  assert.equal(authEntries.find((entry) => entry.key === 'in')?.value, 'header');
   assert.ok(collection.event.some((entry) => entry.script.exec.join('\n').includes('occurredAt')));
   const variableKeys = collection.variable.map((entry) => entry.key);
   for (const key of [
